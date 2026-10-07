@@ -22,7 +22,6 @@ const SECTIONS = [
   { id: "q4", name: "Q4 Recommendations and roadmap", words: [800, 850] },
   { id: "concl", name: "Conclusion", words: [150, 200] },
   { id: "research", name: "Research and data collection" },
-  { id: "outputs", name: "Required analytical outputs" },
   { id: "pres", name: "Formative presentation" },
   { id: "final", name: "Formatting and submission" }
 ];
@@ -41,10 +40,6 @@ const SEED = [
   ["research", "Interview guide and interviews with employees and managers"],
   ["research", "Survey design, distribution and results"],
   ["research", "Observational data notes"],
-  ["outputs", "Three-Level OB Diagnostic (table or figure)"],
-  ["outputs", "Priority Problem Statement (2 or 3 connected problems)"],
-  ["outputs", "Team Conflict, Trust and Collaboration Map"],
-  ["outputs", "12-18 Month Responsible Human-AI Roadmap (actions, owners, timing, risks, KPIs)"],
   ["intro", "Draft: Introduction and organisation context"],
   ["q1", "Draft: Q1 Organisational-level impact"],
   ["q2", "Draft: Q2 Group-level impact"],
@@ -62,8 +57,28 @@ const SEED = [
   ["final", "Submit on WIUT intranet / Turnitin by 04.11.2026 23:59"]
 ];
 
+// Suggested plan from today to the deadline. A task belongs to the first phase whose test matches.
+const PHASES = [
+  { id: "p1", name: "Kick-off", from: "2026-10-07", to: "2026-10-12",
+    goal: "Sign the Learning Contract, choose the organisation, start reading.",
+    test: x => /learning contract|select a real organisation|literature/i.test(x.title) },
+  { id: "p2", name: "Collect evidence", from: "2026-10-12", to: "2026-10-20",
+    goal: "Interviews, survey, observation and public data on the organisation.",
+    test: x => x.section === "research" },
+  { id: "p3", name: "Write drafts", from: "2026-10-19", to: "2026-10-27",
+    goal: "Each member drafts their section within its word range.",
+    test: x => WRITING.includes(x.section) },
+  { id: "p4", name: "Formative presentation", from: "2026-10-20", to: "2026-10-24",
+    goal: "Slides and rehearsal. Check the presentation date with the lecturer.",
+    test: x => x.section === "pres" },
+  { id: "p5", name: "Finalise and submit", from: "2026-10-28", to: "2026-11-04",
+    goal: "References, word count, formatting, final edit, submission by 23:59.",
+    test: () => true }
+];
+const phaseOf = x => PHASES.find(p => p.test(x));
+
 const state = {
-  user: null, role: null, roles: null, tab: "dash",
+  user: null, role: null, roles: null, tab: "roadmap", filter: { phase: "all", owner: "all" }, seeding: false,
   tasks: [], contributions: [], meetings: [], issues: [], activity: [],
   unsub: [], dataOn: false, error: ""
 };
@@ -184,14 +199,14 @@ function startData() {
 
 // ---------- views ----------
 const TABS = [
-  ["dash", "Dashboard"], ["tasks", "Tasks"], ["contrib", "Contributions"],
+  ["roadmap", "Roadmap"], ["dash", "Dashboard"], ["tasks", "Tasks"], ["contrib", "Contributions"],
   ["meetings", "Meetings"], ["issues", "Issues and conflicts"], ["activity", "Activity log"], ["team", "Team"]
 ];
 
 function render() {
   if (!state.user) return renderSignIn();
   if (!state.role) return state.roles ? renderNoAccess() : null;
-  const view = { dash, tasks, contrib, meetings, issues, activity, team }[state.tab] || dash;
+  const view = { roadmap, dash, tasks, contrib, meetings, issues, activity, team }[state.tab] || dash;
   const banner = state.role === "viewer"
     ? `<p class="notice">Read-only view for the lecturer. Every change made by the group is recorded in the Activity log.</p>` : "";
   $app.innerHTML = `
@@ -248,17 +263,93 @@ function dash() {
   </div>`;
 }
 
+const dayMs = 86400000;
+const dateOf = s => new Date(`${s}T00:00:00`);
+const shortDate = s => dateOf(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+
+function roadmap() {
+  const start = dateOf(PHASES[0].from), end = dateOf(PHASES[PHASES.length - 1].to);
+  const span = (end - start) / dayMs + 1;
+  const pos = s => Math.max(0, Math.min(100, (dateOf(s) - start) / dayMs / span * 100));
+  const now = today();
+  const groups = PHASES.map(p => ({ p, items: state.tasks.filter(x => phaseOf(x) === p) }));
+  const current = groups.find(g => g.items.some(x => x.status !== "done"));
+  const next = current?.items.filter(x => x.status !== "done")
+    .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"))[0];
+  const todayPos = pos(now < PHASES[0].from ? PHASES[0].from : now > PHASES[PHASES.length - 1].to ? PHASES[PHASES.length - 1].to : now);
+
+  const bars = groups.map(({ p, items }) => {
+    const d = items.filter(x => x.status === "done").length;
+    const pct = items.length ? Math.round(d / items.length * 100) : 0;
+    const cls = items.length && d === items.length ? "done" : current?.p === p ? "now" : "";
+    return `<div class="gantt-row"><div class="gantt-label">${esc(p.name)}</div>
+      <div class="gantt-track"><div class="gantt-bar ${cls}" style="left:${pos(p.from)}%;width:${Math.max(4, pos(p.to) - pos(p.from) + 100 / span)}%">
+      <i style="width:${pct}%"></i><span>${shortDate(p.from)} to ${shortDate(p.to)}</span></div></div></div>`;
+  }).join("");
+
+  const cards = groups.map(({ p, items }, i) => {
+    const d = items.filter(x => x.status === "done").length;
+    const pct = items.length ? Math.round(d / items.length * 100) : 0;
+    const isNow = current?.p === p;
+    return `<section class="card phase ${isNow ? "now" : ""}">
+      <div class="row spread"><h3>${i + 1}. ${esc(p.name)} ${isNow ? `<span class="pill doing">now</span>` : pct === 100 && items.length ? `<span class="pill done">done</span>` : ""}</h3>
+      <span class="small muted">${shortDate(p.from)} to ${shortDate(p.to)}</span></div>
+      <p class="small muted" style="margin:0 0 6px">${esc(p.goal)}</p>
+      <div class="bar ${pct === 100 ? "ok" : ""}"><i style="width:${pct}%"></i></div>
+      <table>${items.map(x => `<tr><td><span class="pill ${x.status}">${esc(statusName(x.status))}</span></td><td>${esc(x.title)}</td>
+        <td class="small muted">${esc(x.owner ? nameOf(x.owner) : "no owner")}</td><td class="small muted">${esc(x.due)}</td></tr>`).join("") || `<tr><td class="muted small">No tasks in this step</td></tr>`}</table>
+    </section>`;
+  }).join("");
+
+  const noDue = state.tasks.filter(x => !x.due).length;
+  return `
+    ${next ? `<section class="card start"><div class="small muted">Start here</div>
+      <div class="stat" style="font-size:20px">${esc(next.title)}</div>
+      <div class="small">Step ${PHASES.indexOf(current.p) + 1}: ${esc(current.p.name)} · ${esc(next.owner ? nameOf(next.owner) : "nobody assigned yet, pick an owner")}${next.due ? ` · due ${esc(next.due)}` : ""}</div></section>`
+      : state.tasks.length ? `<section class="card start"><div class="stat" style="font-size:20px">All steps done. Submit and celebrate.</div></section>` : ""}
+    <section class="card"><div class="row spread"><h2>Roadmap to 04.11</h2>
+      ${canEdit() && noDue ? `<button class="btn ghost" data-act="suggest-dates">Set suggested due dates (${noDue})</button>` : ""}</div>
+      <div class="scroll"><div class="gantt"><div class="gantt-today" style="left:calc(var(--label) + (100% - var(--label)) * ${todayPos / 100})"><span>today</span></div>${bars}</div></div>
+    </section>
+    ${cards}`;
+}
+
 function taskList(list) {
   return `<table>${list.map(x => `<tr><td>${esc(x.title)}<div class="small muted">${esc(nameOf(x.owner))}</div></td><td class="small">${esc(x.due)}</td></tr>`).join("")}</table>`;
 }
 
+// Tasks with the same title: keep the one with the most work in it, return the rest.
+function duplicates() {
+  const rank = x => STATUSES.findIndex(s => s.id === x.status) * 1000
+    + (x.owner ? 100 : 0) + (x.due ? 10 : 0) + (x.notes ? 5 : 0) + Math.min(x.words || 0, 4);
+  const byTitle = new Map();
+  state.tasks.forEach(x => {
+    const k = x.title.trim().toLowerCase();
+    byTitle.set(k, (byTitle.get(k) || []).concat([x]));
+  });
+  return [...byTitle.values()].filter(g => g.length > 1)
+    .flatMap(g => g.sort((a, b) => rank(b) - rank(a)).slice(1));
+}
+
 function tasks() {
+  const f = state.filter;
+  const shown = state.tasks.filter(x => (f.phase === "all" || phaseOf(x).id === f.phase)
+    && (f.owner === "all" || (f.owner === "none" ? !x.owner : x.owner === f.owner)));
+  const chips = [{ id: "all", name: "All", n: state.tasks.length }]
+    .concat(PHASES.map((p, i) => ({ id: p.id, name: `${i + 1}. ${p.name}`, n: state.tasks.filter(x => phaseOf(x) === p).length })))
+    .map(c => `<button data-phase="${c.id}" class="${f.phase === c.id ? "on" : ""}">${esc(c.name)} <span class="small">${c.n}</span></button>`).join("");
+  const owners = `<select data-act="owner-filter" style="width:auto">
+    <option value="all" ${f.owner === "all" ? "selected" : ""}>Everyone</option>
+    ${people().filter(p => p.role === "member").map(p => `<option value="${esc(p.email)}" ${f.owner === p.email ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+    <option value="none" ${f.owner === "none" ? "selected" : ""}>No owner</option></select>`;
   const cols = STATUSES.map(s => {
-    const items = state.tasks.filter(x => x.status === s.id)
+    const items = shown.filter(x => x.status === s.id)
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
     return `<div class="col"><h3>${s.name} <span class="muted small">${items.length}</span></h3>${items.map(card).join("")}</div>`;
   }).join("");
-  return `<section class="card"><div class="row spread"><h2>Tasks</h2>${canEdit() ? `<button class="btn" data-act="task-new">New task</button>` : ""}</div>
+  return `<section class="card"><div class="row spread"><h2>Tasks <span class="muted small">${shown.length} of ${state.tasks.length}</span></h2>
+      <div class="row">${owners}${state.role === "admin" && duplicates().length ? `<button class="btn danger" data-act="dedupe">Remove duplicates (${duplicates().length})</button>` : ""}${canEdit() ? `<button class="btn" data-act="task-new">New task</button>` : ""}</div></div>
+    <nav class="tabs chips">${chips}</nav>
     <div class="kanban">${cols}</div></section>`;
 }
 
@@ -372,11 +463,29 @@ const actions = {
   },
   signout: () => signOut(auth),
   async seed() {
+    // Guard against a double click creating the set twice.
+    if (state.seeding || state.tasks.length) return;
+    state.seeding = true;
     const batch = writeBatch(db);
     SEED.forEach(([section, title]) => batch.set(doc(collection(db, "tasks")), {
       title, section, owner: "", due: "", status: "todo", words: 0, notes: "", ...stamp()
     }));
     try { await batch.commit(); await log("seeded", `${SEED.length} tasks from the brief`); } catch (e) { fail(e); }
+    finally { state.seeding = false; }
+  },
+  async dedupe() {
+    const extra = duplicates();
+    if (!extra.length || !confirm(`Delete ${extra.length} duplicate tasks? For each title the copy with the most progress (status, owner, due date, notes) is kept.`)) return;
+    const batch = writeBatch(db);
+    extra.forEach(x => batch.delete(doc(db, "tasks", x.id)));
+    try { await batch.commit(); await log("removed duplicates", `${extra.length} duplicate tasks`); } catch (e) { fail(e); }
+  },
+  async "suggest-dates"() {
+    const list = state.tasks.filter(x => !x.due);
+    if (!confirm(`Set the end date of its roadmap step as the due date for ${list.length} tasks without one?`)) return;
+    const batch = writeBatch(db);
+    list.forEach(x => batch.update(doc(db, "tasks", x.id), { due: phaseOf(x).to, ...stamp() }));
+    try { await batch.commit(); await log("set due dates", `${list.length} tasks from the roadmap`); } catch (e) { fail(e); }
   },
   async "task-new"() {
     const f = await openModal(taskForm());
@@ -477,11 +586,15 @@ const actions = {
 document.addEventListener("click", e => {
   const tab = e.target.closest("[data-tab]");
   if (tab) { state.tab = tab.dataset.tab; render(); return; }
+  const chip = e.target.closest("[data-phase]");
+  if (chip) { state.filter.phase = chip.dataset.phase; render(); return; }
   const el = e.target.closest("button[data-act]");
   if (el && actions[el.dataset.act]) { e.preventDefault(); actions[el.dataset.act](el); }
 });
 
 document.addEventListener("change", async e => {
+  const of = e.target.closest("select[data-act='owner-filter']");
+  if (of) { state.filter.owner = of.value; render(); return; }
   const el = e.target.closest("select[data-act='task-status']");
   if (!el) return;
   const x = state.tasks.find(t => t.id === el.dataset.id);
