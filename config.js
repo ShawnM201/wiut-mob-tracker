@@ -8,8 +8,10 @@ export const firebaseConfig = {
   appId: "1:652162468791:web:ff7ca5160eca3beead7632"
 };
 
-// The group admin (personal email). Must match ADMIN_EMAIL in firestore.rules, lowercase.
-export const ADMIN_EMAIL = "shokhmaraim@gmail.com";
+// SHA-256 of the group admin's email (lowercase), so the address is not in the public code.
+// Make it with: printf '%s' 'you@example.com' | shasum -a 256
+// The email itself must match isAdmin() in firestore.rules.
+export const ADMIN_EMAIL_SHA256 = "83dabc5638fa8ba8a6f2562da0ba2612749b9222641b80d75c9d9e432f582a7a";
 
 export const COURSE = {
   code: "7MNST021C",

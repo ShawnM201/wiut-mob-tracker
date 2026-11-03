@@ -7,7 +7,7 @@ import {
   getFirestore, collection, doc, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc,
   serverTimestamp, query, orderBy, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig, ADMIN_EMAIL, COURSE } from "./config.js";
+import { firebaseConfig, ADMIN_EMAIL_SHA256, COURSE } from "./config.js";
 
 const fb = initializeApp(firebaseConfig);
 const auth = getAuth(fb);
@@ -95,7 +95,7 @@ const today = () => new Date().toLocaleDateString("en-CA");
 const me = () => (state.user?.email || "").toLowerCase();
 const canEdit = () => state.role === "admin" || state.role === "member";
 const people = () => state.roles?.people || [];
-const nameOf = email => people().find(p => p.email === email)?.name || email || "Unassigned";
+const nameOf = email => !email ? "Unassigned" : people().find(p => p.email === email)?.name || "Former member";
 const sectionName = id => SECTIONS.find(s => s.id === id)?.name || id;
 const statusName = id => STATUSES.find(s => s.id === id)?.name || id;
 const fmtTime = ts => ts?.toDate ? ts.toDate().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
@@ -149,7 +149,12 @@ function renderSignIn() {
     </section>`;
 }
 
-onAuthStateChanged(auth, user => {
+async function sha256(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+onAuthStateChanged(auth, async user => {
   state.unsub.forEach(u => u());
   state.unsub = [];
   state.dataOn = false;
@@ -157,8 +162,8 @@ onAuthStateChanged(auth, user => {
   state.role = null;
   state.roles = null;
   if (!user) return renderSignIn();
-  $user.innerHTML = `<span class="email">${esc(user.email)}</span><button class="btn ghost" data-act="signout">Sign out</button>`;
-  if (me() === ADMIN_EMAIL.toLowerCase()) state.role = "admin";
+  $user.innerHTML = `<button class="btn ghost" data-act="signout">Sign out</button>`;
+  if (await sha256(me()) === ADMIN_EMAIL_SHA256) state.role = "admin";
   state.unsub.push(onSnapshot(doc(db, "config", "roles"), snap => {
     state.roles = snap.exists() ? snap.data() : { memberEmails: [], viewerEmails: [], people: [] };
     if (state.role !== "admin") {
@@ -173,8 +178,8 @@ onAuthStateChanged(auth, user => {
 function renderNoAccess() {
   $app.innerHTML = `<section class="card" style="max-width:520px;margin:40px auto">
     <h2>Access pending</h2>
-    <p>You are signed in as <b>${esc(state.user?.email)}</b>, but this email is not on the team list yet.</p>
-    <p class="muted small">Ask the group admin to add this exact email, then reload the page.</p></section>`;
+    <p>You are signed in, but this account is not on the team list yet.</p>
+    <p class="muted small">Ask the group admin to add the email you signed in with, then reload the page.</p></section>`;
 }
 
 function startData() {
@@ -199,6 +204,8 @@ const TABS = [
 function render() {
   if (!state.user) return renderSignIn();
   if (!state.role) return state.roles ? renderNoAccess() : null;
+  const myId = people().find(p => p.email === me())?.name || (state.role === "admin" ? "Admin" : "");
+  $user.innerHTML = `<span class="email">${esc(myId)}</span><button class="btn ghost" data-act="signout">Sign out</button>`;
   const view = { roadmap, dash, tasks, contrib, meetings, issues, team }[state.tab] || dash;
   const banner = state.role === "viewer"
     ? `<p class="notice">Read-only view for the lecturer.</p>` : "";
@@ -398,11 +405,11 @@ function issues() {
 }
 
 function team() {
-  const rows = people().map(p => `<tr><td>${esc(p.name)}</td><td class="small">${esc(p.email)}</td><td>${p.role === "viewer" ? "Lecturer (read only)" : "Student"}</td>
+  const rows = people().map(p => `<tr><td>${esc(p.name)}</td><td>${p.role === "viewer" ? "Lecturer (read only)" : "Student"}</td>
     <td>${state.role === "admin" ? `<div class="row small"><button class="link" data-act="person-edit" data-email="${esc(p.email)}">Edit</button><button class="link" data-act="person-del" data-email="${esc(p.email)}">Remove</button></div>` : ""}</td></tr>`).join("");
   return `<section class="card"><div class="row spread"><h2>Team</h2>${state.role === "admin" ? `<button class="btn" data-act="person-new">Add person</button>` : ""}</div>
-    <p class="muted small">Admin: ${esc(ADMIN_EMAIL)}. Students edit the tracker; the lecturer can only view it. The ID is shown everywhere in place of a name; use Edit to change it.</p>
-    <div class="scroll"><table><tr><th>Student ID</th><th>Email</th><th>Role</th><th></th></tr>${rows || `<tr><td colspan="4" class="muted">Nobody added yet</td></tr>`}</table></div></section>`;
+    <p class="muted small">Students edit the tracker; the lecturer can only view it. The ID is shown everywhere in place of a name; use Edit to change it.</p>
+    <div class="scroll"><table><tr><th>Student ID</th><th>Role</th><th></th></tr>${rows || `<tr><td colspan="3" class="muted">Nobody added yet</td></tr>`}</table></div></section>`;
 }
 
 // ---------- actions ----------
@@ -507,8 +514,8 @@ const actions = {
     try { await deleteDoc(doc(db, "contributions", c.id)); } catch (e) { fail(e); }
   },
   csv() {
-    const rows = [["date", "member", "email", "hours", "description"],
-      ...state.contributions.map(c => [c.date, nameOf(c.email), c.email, c.hours, c.text])];
+    const rows = [["date", "student_id", "hours", "description"],
+      ...state.contributions.map(c => [c.date, nameOf(c.email), c.hours, c.text])];
     const text = rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv" }));
@@ -555,7 +562,7 @@ const actions = {
   async "person-new"(el, x = {}) {
     const f = await openModal(`<h2>${x.email ? "Edit person" : "Add person"}</h2>
       <label>Student ID</label><input name="name" required maxlength="100" value="${esc(x.name)}">
-      <label>Email they sign in with</label><input type="email" name="email" required value="${esc(x.email)}" ${x.email ? "readonly" : ""}>
+      ${x.email ? `<input type="hidden" name="email" value="${esc(x.email)}">` : `<label>Email they sign in with</label><input type="email" name="email" required>`}
       <label>Role</label><select name="role"><option value="member" ${x.role !== "viewer" ? "selected" : ""}>Student (can edit)</option><option value="viewer" ${x.role === "viewer" ? "selected" : ""}>Lecturer (read only)</option></select>${modalActions}`);
     if (!f) return;
     const email = f.email.trim().toLowerCase();

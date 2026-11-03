@@ -11,7 +11,7 @@ Group coursework tracker for 7MNST021C Management and Organisational Behaviour (
 ## Setup
 
 1. Put your personal email (lowercase) in two places:
-   - `config.js` → `ADMIN_EMAIL`
+   - `config.js` → `ADMIN_EMAIL_SHA256`: not the email itself but its hash, made with `printf '%s' 'you@example.com' | shasum -a 256`
    - `firestore.rules` → `isAdmin()`
 2. Firebase console → Firestore → **Rules**: paste the whole `firestore.rules` and click **Publish**.
 3. Firebase console → Authentication → **Sign-in method**:
