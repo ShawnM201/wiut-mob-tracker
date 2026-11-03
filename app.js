@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc,
-  serverTimestamp, query, orderBy, limit, writeBatch
+  serverTimestamp, query, orderBy, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, ADMIN_EMAIL, COURSE } from "./config.js";
 
@@ -79,7 +79,7 @@ const phaseOf = x => PHASES.find(p => p.test(x));
 
 const state = {
   user: null, role: null, roles: null, tab: "roadmap", filter: { phase: "all", owner: "all" }, seeding: false,
-  tasks: [], contributions: [], meetings: [], issues: [], activity: [],
+  tasks: [], contributions: [], meetings: [], issues: [],
   unsub: [], dataOn: false, error: ""
 };
 
@@ -100,12 +100,6 @@ const sectionName = id => SECTIONS.find(s => s.id === id)?.name || id;
 const statusName = id => STATUSES.find(s => s.id === id)?.name || id;
 const fmtTime = ts => ts?.toDate ? ts.toDate().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "";
 const stamp = () => ({ updatedBy: me(), updatedAt: serverTimestamp() });
-
-async function log(action, what) {
-  try {
-    await addDoc(collection(db, "activity"), { who: me(), action, what: String(what).slice(0, 300), at: serverTimestamp() });
-  } catch (e) { console.warn("activity log failed", e); }
-}
 
 function fail(e) {
   console.error(e);
@@ -194,21 +188,20 @@ function startData() {
   watch("contributions", query(collection(db, "contributions"), orderBy("date", "desc")));
   watch("meetings", query(collection(db, "meetings"), orderBy("date", "desc")));
   watch("issues", collection(db, "issues"));
-  watch("activity", query(collection(db, "activity"), orderBy("at", "desc"), limit(300)));
 }
 
 // ---------- views ----------
 const TABS = [
   ["roadmap", "Roadmap"], ["dash", "Dashboard"], ["tasks", "Tasks"], ["contrib", "Contributions"],
-  ["meetings", "Meetings"], ["issues", "Issues and conflicts"], ["activity", "Activity log"], ["team", "Team"]
+  ["meetings", "Meetings"], ["issues", "Issues and conflicts"], ["team", "Team"]
 ];
 
 function render() {
   if (!state.user) return renderSignIn();
   if (!state.role) return state.roles ? renderNoAccess() : null;
-  const view = { roadmap, dash, tasks, contrib, meetings, issues, activity, team }[state.tab] || dash;
+  const view = { roadmap, dash, tasks, contrib, meetings, issues, team }[state.tab] || dash;
   const banner = state.role === "viewer"
-    ? `<p class="notice">Read-only view for the lecturer. Every change made by the group is recorded in the Activity log.</p>` : "";
+    ? `<p class="notice">Read-only view for the lecturer.</p>` : "";
   $app.innerHTML = `
     <nav class="tabs">${TABS.map(([id, n]) => `<button data-tab="${id}" class="${state.tab === id ? "on" : ""}">${n}</button>`).join("")}</nav>
     ${banner}${view()}`;
@@ -241,9 +234,9 @@ function dash() {
     const own = t.filter(x => x.owner === p.email);
     const hrs = state.contributions.filter(c => c.email === p.email).reduce((s, c) => s + Number(c.hours || 0), 0);
     const entries = state.contributions.filter(c => c.email === p.email).length;
-    const last = state.activity.find(a => a.who === p.email);
+    const last = state.contributions.find(c => c.email === p.email);
     return `<tr><td>${esc(p.name)}</td><td>${own.filter(x => x.status === "done").length}/${own.length}</td>
-      <td>${hrs.toFixed(1)}</td><td>${entries}</td><td class="small muted">${last ? fmtTime(last.at) : "no activity yet"}</td></tr>`;
+      <td>${hrs.toFixed(1)}</td><td>${entries}</td><td class="small muted">${last ? esc(last.date) : "no entries yet"}</td></tr>`;
   }).join("");
 
   const seedBtn = canEdit() && !t.length
@@ -256,7 +249,7 @@ function dash() {
     <section class="card"><div class="muted small">Words drafted (target ${COURSE.wordTarget} +/- 10%)</div><div class="stat">${words}</div><div class="bar ${inRange ? "ok" : "warn"}"><i style="width:${wPct}%"></i></div></section>
   </div>
   <section class="card"><h2>Progress by section</h2><div class="scroll"><table><tr><th>Section</th><th>Progress</th><th>Tasks</th><th>Words</th></tr>${sectionRows || `<tr><td colspan="4" class="muted">No tasks yet</td></tr>`}</table></div></section>
-  <section class="card"><h2>Contribution by member</h2><div class="scroll"><table><tr><th>Member</th><th>Tasks done</th><th>Hours logged</th><th>Log entries</th><th>Last activity</th></tr>${memberRows || `<tr><td colspan="5" class="muted">Add members on the Team tab</td></tr>`}</table></div></section>
+  <section class="card"><h2>Contribution by member</h2><div class="scroll"><table><tr><th>Student ID</th><th>Tasks done</th><th>Hours logged</th><th>Log entries</th><th>Last entry</th></tr>${memberRows || `<tr><td colspan="5" class="muted">Add members on the Team tab</td></tr>`}</table></div></section>
   <div class="grid">
     <section class="card"><h2>Overdue</h2>${late.length ? taskList(late) : `<p class="muted">Nothing overdue</p>`}</section>
     <section class="card"><h2>Coming up</h2>${soon.length ? taskList(soon) : `<p class="muted">No upcoming due dates</p>`}</section>
@@ -379,7 +372,7 @@ function contrib() {
   return `<section class="card"><div class="row spread"><h2>Contribution log</h2><div class="row">
       <button class="btn ghost" data-act="csv">Export CSV</button>${canEdit() ? `<button class="btn" data-act="contrib-new">Log my work</button>` : ""}</div></div>
     <p class="muted small">Each member records what they did and how long it took. Entries can be changed only by their author.</p>
-    <div class="scroll"><table><tr><th>Date</th><th>Member</th><th>Hours</th><th>What was done</th><th></th></tr>${rows || `<tr><td colspan="5" class="muted">No entries yet</td></tr>`}</table></div></section>`;
+    <div class="scroll"><table><tr><th>Date</th><th>Student ID</th><th>Hours</th><th>What was done</th><th></th></tr>${rows || `<tr><td colspan="5" class="muted">No entries yet</td></tr>`}</table></div></section>`;
 }
 
 function meetings() {
@@ -404,18 +397,12 @@ function issues() {
     <div class="scroll"><table><tr><th>Status</th><th>Issue</th><th>Resolution</th><th></th></tr>${rows || `<tr><td colspan="4" class="muted">No issues recorded</td></tr>`}</table></div></section>`;
 }
 
-function activity() {
-  const rows = state.activity.map(a => `<tr><td class="small">${fmtTime(a.at)}</td><td>${esc(nameOf(a.who))}</td><td>${esc(a.action)}</td><td>${esc(a.what)}</td></tr>`).join("");
-  return `<section class="card"><h2>Activity log</h2><p class="muted small">Automatic, append-only record of every change. Nobody can edit or delete it.</p>
-    <div class="scroll"><table><tr><th>When</th><th>Who</th><th>Action</th><th>Details</th></tr>${rows || `<tr><td colspan="4" class="muted">No activity yet</td></tr>`}</table></div></section>`;
-}
-
 function team() {
   const rows = people().map(p => `<tr><td>${esc(p.name)}</td><td class="small">${esc(p.email)}</td><td>${p.role === "viewer" ? "Lecturer (read only)" : "Student"}</td>
-    <td>${state.role === "admin" ? `<button class="link" data-act="person-del" data-email="${esc(p.email)}">Remove</button>` : ""}</td></tr>`).join("");
+    <td>${state.role === "admin" ? `<div class="row small"><button class="link" data-act="person-edit" data-email="${esc(p.email)}">Edit</button><button class="link" data-act="person-del" data-email="${esc(p.email)}">Remove</button></div>` : ""}</td></tr>`).join("");
   return `<section class="card"><div class="row spread"><h2>Team</h2>${state.role === "admin" ? `<button class="btn" data-act="person-new">Add person</button>` : ""}</div>
-    <p class="muted small">Admin: ${esc(ADMIN_EMAIL)}. Students edit the tracker; the lecturer can only view it.</p>
-    <div class="scroll"><table><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr>${rows || `<tr><td colspan="4" class="muted">Nobody added yet</td></tr>`}</table></div></section>`;
+    <p class="muted small">Admin: ${esc(ADMIN_EMAIL)}. Students edit the tracker; the lecturer can only view it. The ID is shown everywhere in place of a name; use Edit to change it.</p>
+    <div class="scroll"><table><tr><th>Student ID</th><th>Email</th><th>Role</th><th></th></tr>${rows || `<tr><td colspan="4" class="muted">Nobody added yet</td></tr>`}</table></div></section>`;
 }
 
 // ---------- actions ----------
@@ -470,7 +457,7 @@ const actions = {
     SEED.forEach(([section, title]) => batch.set(doc(collection(db, "tasks")), {
       title, section, owner: "", due: "", status: "todo", words: 0, notes: "", ...stamp()
     }));
-    try { await batch.commit(); await log("seeded", `${SEED.length} tasks from the brief`); } catch (e) { fail(e); }
+    try { await batch.commit(); } catch (e) { fail(e); }
     finally { state.seeding = false; }
   },
   async dedupe() {
@@ -478,30 +465,30 @@ const actions = {
     if (!extra.length || !confirm(`Delete ${extra.length} duplicate tasks? For each title the copy with the most progress (status, owner, due date, notes) is kept.`)) return;
     const batch = writeBatch(db);
     extra.forEach(x => batch.delete(doc(db, "tasks", x.id)));
-    try { await batch.commit(); await log("removed duplicates", `${extra.length} duplicate tasks`); } catch (e) { fail(e); }
+    try { await batch.commit(); } catch (e) { fail(e); }
   },
   async "suggest-dates"() {
     const list = state.tasks.filter(x => !x.due);
     if (!confirm(`Set the end date of its roadmap step as the due date for ${list.length} tasks without one?`)) return;
     const batch = writeBatch(db);
     list.forEach(x => batch.update(doc(db, "tasks", x.id), { due: phaseOf(x).to, ...stamp() }));
-    try { await batch.commit(); await log("set due dates", `${list.length} tasks from the roadmap`); } catch (e) { fail(e); }
+    try { await batch.commit(); } catch (e) { fail(e); }
   },
   async "task-new"() {
     const f = await openModal(taskForm());
     if (!f) return;
-    try { await addDoc(collection(db, "tasks"), taskData(f)); await log("created task", f.title); } catch (e) { fail(e); }
+    try { await addDoc(collection(db, "tasks"), taskData(f)); } catch (e) { fail(e); }
   },
   async "task-edit"(el) {
     const x = state.tasks.find(t => t.id === el.dataset.id);
     const f = await openModal(taskForm(x));
     if (!f) return;
-    try { await setDoc(doc(db, "tasks", x.id), taskData(f)); await log("edited task", f.title); } catch (e) { fail(e); }
+    try { await setDoc(doc(db, "tasks", x.id), taskData(f)); } catch (e) { fail(e); }
   },
   async "task-del"(el) {
     const x = state.tasks.find(t => t.id === el.dataset.id);
     if (!confirm(`Delete task "${x.title}"?`)) return;
-    try { await deleteDoc(doc(db, "tasks", x.id)); await log("deleted task", x.title); } catch (e) { fail(e); }
+    try { await deleteDoc(doc(db, "tasks", x.id)); } catch (e) { fail(e); }
   },
   async "contrib-new"() {
     const f = await openModal(`<h2>Log my work</h2>
@@ -512,13 +499,12 @@ const actions = {
     if (!f) return;
     try {
       await addDoc(collection(db, "contributions"), { email: me(), date: f.date, hours: Number(f.hours), text: f.text.trim(), taskId: f.taskId, ...stamp() });
-      await log("logged work", `${f.hours} h: ${f.text}`);
     } catch (e) { fail(e); }
   },
   async "contrib-del"(el) {
     if (!confirm("Delete this entry?")) return;
     const c = state.contributions.find(x => x.id === el.dataset.id);
-    try { await deleteDoc(doc(db, "contributions", c.id)); await log("deleted work entry", `${c.date}: ${c.text}`); } catch (e) { fail(e); }
+    try { await deleteDoc(doc(db, "contributions", c.id)); } catch (e) { fail(e); }
   },
   csv() {
     const rows = [["date", "member", "email", "hours", "description"],
@@ -542,15 +528,15 @@ const actions = {
       agenda: f.agenda || "", decisions: f.decisions || "", actions: f.actions || "", ...stamp()
     };
     try {
-      if (x.id) { await setDoc(doc(db, "meetings", x.id), data); await log("edited meeting", f.date); }
-      else { await addDoc(collection(db, "meetings"), data); await log("added meeting", f.date); }
+      if (x.id) { await setDoc(doc(db, "meetings", x.id), data); }
+      else { await addDoc(collection(db, "meetings"), data); }
     } catch (e) { fail(e); }
   },
   "meet-edit"(el) { return actions["meet-new"](el, state.meetings.find(m => m.id === el.dataset.id)); },
   async "meet-del"(el) {
     const m = state.meetings.find(x => x.id === el.dataset.id);
     if (!confirm(`Delete meeting of ${m.date}?`)) return;
-    try { await deleteDoc(doc(db, "meetings", m.id)); await log("deleted meeting", m.date); } catch (e) { fail(e); }
+    try { await deleteDoc(doc(db, "meetings", m.id)); } catch (e) { fail(e); }
   },
   async "issue-new"(el, x = {}) {
     const f = await openModal(`<h2>${x.id ? "Edit issue" : "Record issue"}</h2>
@@ -561,25 +547,28 @@ const actions = {
     if (!f) return;
     const data = { title: f.title.trim(), text: f.text || "", resolution: f.resolution || "", status: f.status, ...stamp() };
     try {
-      if (x.id) { await setDoc(doc(db, "issues", x.id), data); await log("updated issue", `${f.title} (${f.status})`); }
-      else { await addDoc(collection(db, "issues"), data); await log("recorded issue", f.title); }
+      if (x.id) { await setDoc(doc(db, "issues", x.id), data); }
+      else { await addDoc(collection(db, "issues"), data); }
     } catch (e) { fail(e); }
   },
   "issue-edit"(el) { return actions["issue-new"](el, state.issues.find(i => i.id === el.dataset.id)); },
-  async "person-new"() {
-    const f = await openModal(`<h2>Add person</h2>
-      <label>Name</label><input name="name" required maxlength="100">
-      <label>Email they sign in with</label><input type="email" name="email" required>
-      <label>Role</label><select name="role"><option value="member">Student (can edit)</option><option value="viewer">Lecturer (read only)</option></select>${modalActions}`);
+  async "person-new"(el, x = {}) {
+    const f = await openModal(`<h2>${x.email ? "Edit person" : "Add person"}</h2>
+      <label>Student ID</label><input name="name" required maxlength="100" value="${esc(x.name)}">
+      <label>Email they sign in with</label><input type="email" name="email" required value="${esc(x.email)}" ${x.email ? "readonly" : ""}>
+      <label>Role</label><select name="role"><option value="member" ${x.role !== "viewer" ? "selected" : ""}>Student (can edit)</option><option value="viewer" ${x.role === "viewer" ? "selected" : ""}>Lecturer (read only)</option></select>${modalActions}`);
     if (!f) return;
     const email = f.email.trim().toLowerCase();
-    const list = people().filter(p => p.email !== email).concat([{ email, name: f.name, role: f.role }]);
-    try { await saveRoles(list); await log("added person", `${f.name} (${f.role})`); } catch (e) { fail(e); }
+    // Keep the person's place in the list when editing.
+    const list = x.email ? people().map(p => p.email === email ? { email, name: f.name, role: f.role } : p)
+      : people().filter(p => p.email !== email).concat([{ email, name: f.name, role: f.role }]);
+    try { await saveRoles(list); } catch (e) { fail(e); }
   },
+  "person-edit"(el) { return actions["person-new"](el, people().find(p => p.email === el.dataset.email)); },
   async "person-del"(el) {
     const p = people().find(x => x.email === el.dataset.email);
     if (!confirm(`Remove ${p.name}?`)) return;
-    try { await saveRoles(people().filter(x => x.email !== p.email)); await log("removed person", p.name); } catch (e) { fail(e); }
+    try { await saveRoles(people().filter(x => x.email !== p.email)); } catch (e) { fail(e); }
   }
 };
 
@@ -600,7 +589,6 @@ document.addEventListener("change", async e => {
   const x = state.tasks.find(t => t.id === el.dataset.id);
   try {
     await updateDoc(doc(db, "tasks", x.id), { status: el.value, ...stamp() });
-    await log("moved task", `${x.title}: ${statusName(x.status)} to ${statusName(el.value)}`);
   } catch (err) { fail(err); }
 });
 
