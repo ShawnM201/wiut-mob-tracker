@@ -88,7 +88,7 @@ const $app = document.getElementById("app");
 const $user = document.getElementById("user-box");
 const $modal = document.getElementById("modal");
 const $form = document.getElementById("modal-form");
-document.getElementById("course-line").textContent = `${COURSE.code} ${COURSE.title}`;
+document.getElementById("course-line").textContent = `${COURSE.code} ${COURSE.title} · Case organisation: ${COURSE.organisation}`;
 
 // ---------- helpers ----------
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -253,6 +253,7 @@ function dash() {
 
   return `${seedBtn}
   <div class="grid">
+    <section class="card"><div class="muted small">Case organisation</div><div class="stat" style="font-size:20px">${esc(COURSE.organisation)}</div><div class="small muted">${esc(COURSE.task)}</div></section>
     <section class="card"><div class="muted small">Deadline 04.11.2026, 23:59</div><div class="stat">${daysLeft > 0 ? `${daysLeft} days left` : "Deadline passed"}</div></section>
     <section class="card"><div class="muted small">Tasks done</div><div class="stat">${pct}%</div><div class="bar ok"><i style="width:${pct}%"></i></div><div class="small muted">${done} of ${t.length}</div></section>
     <section class="card"><div class="muted small">Words drafted (target ${COURSE.wordTarget} +/- 10%)</div><div class="stat">${words}</div><div class="bar ${inRange ? "ok" : "warn"}"><i style="width:${wPct}%"></i></div></section>

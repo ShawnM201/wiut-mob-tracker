@@ -17,6 +17,7 @@ export const COURSE = {
   code: "7MNST021C",
   title: "Management and Organisational Behaviour",
   task: "Group analytical report: AI at Work, organisational readiness in Uzbekistan",
+  organisation: "Frutaseca, dried fruit exporter, Tashkent",
   lecturer: "Dr. Athar Hameed Butt",
   deadline: "2026-11-04T23:59:59+05:00",
   wordTarget: 3000
