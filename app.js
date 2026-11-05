@@ -80,7 +80,7 @@ const phaseOf = x => PHASES.find(p => p.test(x));
 
 const state = {
   user: null, role: null, roles: null, tab: "roadmap", filter: { phase: "all", owner: "all" }, seeding: false,
-  tasks: [], contributions: [], meetings: [], issues: [],
+  tasks: [], meetings: [], issues: [],
   unsub: [], dataOn: false, error: ""
 };
 
@@ -197,14 +197,13 @@ function startData() {
     render();
   }, e => console.warn(name, e)));
   watch("tasks", collection(db, "tasks"));
-  watch("contributions", query(collection(db, "contributions"), orderBy("date", "desc")));
   watch("meetings", query(collection(db, "meetings"), orderBy("date", "desc")));
   watch("issues", collection(db, "issues"));
 }
 
 // ---------- views ----------
 const TABS = [
-  ["roadmap", "Roadmap"], ["dash", "Dashboard"], ["tasks", "Tasks"], ["contrib", "Contributions"],
+  ["roadmap", "Roadmap"], ["dash", "Dashboard"], ["tasks", "Tasks"],
   ["meetings", "Meetings"], ["issues", "Issues and conflicts"], ["team", "Team"]
 ];
 
@@ -213,7 +212,7 @@ function render() {
   if (!state.role) return state.roles ? renderNoAccess() : null;
   const myId = people().find(p => p.email === me())?.name || (state.role === "admin" ? "Admin" : "");
   $user.innerHTML = `<span class="email">${esc(myId)}</span><button class="btn ghost" data-act="signout">Sign out</button>`;
-  const view = { roadmap, dash, tasks, contrib, meetings, issues, team }[state.tab] || dash;
+  const view = { roadmap, dash, tasks, meetings, issues, team }[state.tab] || dash;
   const banner = state.role === "viewer"
     ? `<p class="notice">Read-only view for the lecturer.</p>` : "";
   $app.innerHTML = `
@@ -246,11 +245,7 @@ function dash() {
   const members = people().filter(p => p.role === "member");
   const memberRows = members.map(p => {
     const own = t.filter(x => x.owner === p.email);
-    const hrs = state.contributions.filter(c => c.email === p.email).reduce((s, c) => s + Number(c.hours || 0), 0);
-    const entries = state.contributions.filter(c => c.email === p.email).length;
-    const last = state.contributions.find(c => c.email === p.email);
-    return `<tr><td>${esc(p.name)}</td><td>${own.filter(x => x.status === "done").length}/${own.length}</td>
-      <td>${hrs.toFixed(1)}</td><td>${entries}</td><td class="small muted">${last ? esc(last.date) : "no entries yet"}</td></tr>`;
+    return `<tr><td>${esc(p.name)}</td><td>${own.filter(x => x.status === "done").length}/${own.length}</td></tr>`;
   }).join("");
 
   const seedBtn = canEdit() && !t.length
@@ -263,7 +258,7 @@ function dash() {
     <section class="card"><div class="muted small">Words drafted (target ${COURSE.wordTarget} +/- 10%)</div><div class="stat">${words}</div><div class="bar ${inRange ? "ok" : "warn"}"><i style="width:${wPct}%"></i></div></section>
   </div>
   <section class="card"><h2>Progress by section</h2><div class="scroll"><table><tr><th>Section</th><th>Progress</th><th>Tasks</th><th>Words</th></tr>${sectionRows || `<tr><td colspan="4" class="muted">No tasks yet</td></tr>`}</table></div></section>
-  <section class="card"><h2>Contribution by member</h2><div class="scroll"><table><tr><th>Student ID</th><th>Tasks done</th><th>Hours logged</th><th>Log entries</th><th>Last entry</th></tr>${memberRows || `<tr><td colspan="5" class="muted">Add members on the Team tab</td></tr>`}</table></div></section>
+  <section class="card"><h2>Contribution by member</h2><div class="scroll"><table><tr><th>Student ID</th><th>Tasks done</th></tr>${memberRows || `<tr><td colspan="2" class="muted">Add members on the Team tab</td></tr>`}</table></div></section>
   <div class="grid">
     <section class="card"><h2>Overdue</h2>${late.length ? taskList(late) : `<p class="muted">Nothing overdue</p>`}</section>
     <section class="card"><h2>Coming up</h2>${soon.length ? taskList(soon) : `<p class="muted">No upcoming due dates</p>`}</section>
@@ -376,17 +371,6 @@ function card(x) {
 function memberOptions(selected) {
   return `<option value="">Unassigned</option>` + people().filter(p => p.role === "member")
     .map(p => `<option value="${esc(p.email)}" ${p.email === selected ? "selected" : ""}>${esc(p.name)}</option>`).join("");
-}
-
-function contrib() {
-  const rows = state.contributions.map(c => `<tr>
-    <td class="small">${esc(c.date)}</td><td>${esc(nameOf(c.email))}</td><td>${Number(c.hours).toFixed(1)}</td>
-    <td class="pre">${esc(c.text)}${c.taskId ? `<div class="small muted">Task: ${esc(state.tasks.find(t => t.id === c.taskId)?.title || "deleted task")}</div>` : ""}</td>
-    <td>${c.email === me() ? `<button class="link" data-act="contrib-del" data-id="${c.id}">Delete</button>` : ""}</td></tr>`).join("");
-  return `<section class="card"><div class="row spread"><h2>Contribution log</h2><div class="row">
-      <button class="btn ghost" data-act="csv">Export CSV</button>${canEdit() ? `<button class="btn" data-act="contrib-new">Log my work</button>` : ""}</div></div>
-    <p class="muted small">Each member records what they did and how long it took. Entries can be changed only by their author.</p>
-    <div class="scroll"><table><tr><th>Date</th><th>Student ID</th><th>Hours</th><th>What was done</th><th></th></tr>${rows || `<tr><td colspan="5" class="muted">No entries yet</td></tr>`}</table></div></section>`;
 }
 
 function meetings() {
@@ -521,31 +505,6 @@ const actions = {
     const x = state.tasks.find(t => t.id === el.dataset.id);
     if (!confirm(`Delete task "${x.title}"?`)) return;
     try { await deleteDoc(doc(db, "tasks", x.id)); } catch (e) { fail(e); }
-  },
-  async "contrib-new"() {
-    const f = await openModal(`<h2>Log my work</h2>
-      <div class="grid" style="gap:8px"><div><label>Date</label><input type="date" name="date" required value="${today()}"></div>
-      <div><label>Hours</label><input type="number" name="hours" required min="0.25" max="24" step="0.25" value="1"></div></div>
-      <label>Related task (optional)</label><select name="taskId"><option value="">None</option>${state.tasks.map(t => `<option value="${t.id}">${esc(t.title)}</option>`).join("")}</select>
-      <label>What did you do?</label><textarea name="text" required maxlength="2000"></textarea>${modalActions}`);
-    if (!f) return;
-    try {
-      await addDoc(collection(db, "contributions"), { email: me(), date: f.date, hours: Number(f.hours), text: f.text.trim(), taskId: f.taskId, ...stamp() });
-    } catch (e) { fail(e); }
-  },
-  async "contrib-del"(el) {
-    if (!confirm("Delete this entry?")) return;
-    const c = state.contributions.find(x => x.id === el.dataset.id);
-    try { await deleteDoc(doc(db, "contributions", c.id)); } catch (e) { fail(e); }
-  },
-  csv() {
-    const rows = [["date", "student_id", "hours", "description"],
-      ...state.contributions.map(c => [c.date, nameOf(c.email), c.hours, c.text])];
-    const text = rows.map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv" }));
-    a.download = `contributions-${today()}.csv`;
-    a.click();
   },
   async "meet-new"(el, x = {}) {
     const f = await openModal(`<h2>${x.id ? "Edit meeting" : "Add meeting"}</h2>

@@ -5,7 +5,7 @@ Group coursework tracker for 7MNST021C Management and Organisational Behaviour (
 ## Roles
 
 - **Admin**: the email in `config.js` and `firestore.rules`. Manages the team list.
-- **Students**: edit tasks, log their work, record meetings and issues.
+- **Students**: edit tasks, record meetings and issues.
 - **Lecturer**: read-only access to everything.
 
 ## Setup
