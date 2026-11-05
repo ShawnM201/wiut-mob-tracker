@@ -15,11 +15,12 @@ Group coursework tracker for 7MNST021C Management and Organisational Behaviour (
    - `firestore.rules` → `isAdmin()`
 2. Firebase console → Firestore → **Rules**: paste the whole `firestore.rules` and click **Publish**.
 3. Firebase console → Authentication → **Sign-in method**:
-   - Email/Password with **Email link (passwordless sign-in)** on;
+   - Email/Password, also with **Email link (passwordless sign-in)** on;
    - **Google** on (choose a support email).
-4. Authentication → **Settings → Authorized domains**: add `<your-github-username>.github.io`.
-5. GitHub: upload `index.html`, `app.js`, `config.js`, `style.css` to the repository, then **Settings → Pages → Deploy from a branch → main / root**. The site appears at `https://<your-github-username>.github.io/<repo>/`.
-6. Open the site, sign in with the admin email, go to **Team** and add the students (by student ID) and the lecturer, then **Dashboard → Create tasks from the brief**.
+4. Authentication → **Settings → User actions**: turn **Enable create (sign-up)** off, so only accounts made in **Users → Add user** can sign in with a password.
+5. Authentication → **Settings → Authorized domains**: add `<your-github-username>.github.io`.
+6. GitHub: upload `index.html`, `app.js`, `config.js`, `style.css` to the repository, then **Settings → Pages → Deploy from a branch → main / root**. The site appears at `https://<your-github-username>.github.io/<repo>/`.
+7. Open the site, sign in with the admin email, go to **Team** and add the students (by student ID) and the lecturer, then **Dashboard → Create tasks from the brief**.
 
 ## Local test
 

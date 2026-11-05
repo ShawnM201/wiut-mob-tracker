@@ -1,7 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup,
-  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut
+  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut,
+  signInWithEmailAndPassword, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc,
@@ -142,7 +143,13 @@ function renderSignIn() {
       <h2>Sign in</h2>
       <p class="muted small">Group members and the module lecturer only. Your email must be on the team list.</p>
       ${state.error ? `<p class="notice warn">${esc(state.error)}</p>` : ""}
-      <button class="btn" data-act="google" style="width:100%">Continue with Google</button>
+      <input id="pw-email" type="email" placeholder="Email" autocomplete="username" style="width:100%;margin-bottom:8px">
+      <input id="pw-pass" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;margin-bottom:8px">
+      <button class="btn" data-act="password" style="width:100%">Sign in</button>
+      <p class="small" style="margin:6px 0 0"><button class="link" data-act="reset-password">Forgot password?</button></p>
+      <p class="muted small" id="pw-msg"></p>
+      <p class="muted small center" style="margin:14px 0 4px">or</p>
+      <button class="btn ghost" data-act="google" style="width:100%">Continue with Google</button>
       <p class="muted small center" style="margin:14px 0 4px">or get a sign-in link by email</p>
       <div class="row"><input id="link-email" type="email" placeholder="you@example.com" style="flex:1"><button class="btn ghost" data-act="send-link">Send link</button></div>
       <p class="muted small" id="link-msg"></p>
@@ -444,6 +451,24 @@ const actions = {
   async google() {
     try { await signInWithPopup(auth, new GoogleAuthProvider()); }
     catch (e) { state.error = e.code || e.message; renderSignIn(); }
+  },
+  async password() {
+    const email = document.getElementById("pw-email").value.trim();
+    const pass = document.getElementById("pw-pass").value;
+    const msg = document.getElementById("pw-msg");
+    if (!email || !pass) { msg.textContent = "Enter your email and password."; return; }
+    try { await signInWithEmailAndPassword(auth, email, pass); }
+    catch (e) {
+      msg.textContent = ["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(e.code)
+        ? "Wrong email or password." : `Could not sign in: ${e.code || e.message}`;
+    }
+  },
+  async "reset-password"() {
+    const email = document.getElementById("pw-email").value.trim();
+    const msg = document.getElementById("pw-msg");
+    if (!email) { msg.textContent = "Enter your email above first."; return; }
+    try { await sendPasswordResetEmail(auth, email); msg.textContent = "If this account exists, a reset link has been sent."; }
+    catch (e) { msg.textContent = `Could not send: ${e.code || e.message}`; }
   },
   async "send-link"() {
     const email = document.getElementById("link-email").value.trim();
